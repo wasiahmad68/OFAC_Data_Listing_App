@@ -7,7 +7,7 @@ import re
 df_checkv2 = pd.read_excel('df_checkv2.xlsx', dtype={'id': 'Int64'})
 df_checkv2.shape
 # importing countrycode df
-country_code_df = pd.read_excel(r"Country_code.xlsx",
+country_code_df = pd.read_excel("Country_code.xlsx",
                    keep_default_na=False, na_values=[])
 # importing format of ofac listing
 df_format = pd.read_excel('OFAC_format.xlsx')

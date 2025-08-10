@@ -1,43 +1,71 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import requests
+import os
 import re
 import ast
+import numpy as np
+import pandas as pd
+import requests
+import streamlit as st
 from io import BytesIO
+
+st.set_page_config(page_title="OFAC Data Processing and Export")
 
 st.title("OFAC Data Processing and Export")
 
-st.title("Upload your files here")
+# Upload required file
+uploaded_df_checkv2 = st.file_uploader("Upload df_checkv2.xlsx (required)", type=["xlsx"])
 
-uploaded_df_checkv2 = st.file_uploader("Upload df_checkv2.xlsx", type=["xlsx"])
-uploaded_country_code = st.file_uploader("Upload Country_code.xlsx", type=["xlsx"])
-uploaded_df_format = st.file_uploader("Upload OFAC_format.xlsx", type=["xlsx"])
+# Button to load local files instead of uploading
+st.markdown("#### **Load Country_code.xlsx and OFAC_format.xlsx from online source or upload manually**")
+use_local_others = st.button("click to Load Both Files")
 
-if uploaded_df_checkv2 and uploaded_country_code and uploaded_df_format:
+# Optional upload for other two files
+uploaded_country_code = st.file_uploader("Upload Country_code.xlsx (optional)", type=["xlsx"])
+uploaded_df_format = st.file_uploader("Upload OFAC_format.xlsx (optional)", type=["xlsx"])
 
+
+
+
+if uploaded_df_checkv2:
+
+    # Read uploaded df_checkv2
     progress_bar = st.progress(0)
     status_text = st.empty()
-
-    status_text.text("Reading input files...")
+    status_text.text("Reading df_checkv2.xlsx...")
     df_checkv2 = pd.read_excel(uploaded_df_checkv2, dtype={'id': 'Int64'})
-    country_code_df = pd.read_excel(uploaded_country_code, keep_default_na=False, na_values=[])
-    df_format = pd.read_excel(uploaded_df_format)
     progress_bar.progress(10)
 
+    # Load Country_code.xlsx and OFAC_format.xlsx either from upload or local
+    if use_local_others:
+        try:
+            country_code_df = pd.read_excel('Country_code.xlsx',keep_default_na=False, na_values=[])
+            df_format = pd.read_excel('OFAC_format.xlsx')
+            st.success("Loaded Country_code.xlsx and OFAC_format.xlsx from local files.")
+        except Exception as e:
+            st.error(f"Error loading local files: {e}")
+            st.stop()
+    else:
+        if uploaded_country_code is not None and uploaded_df_format is not None:
+            country_code_df = pd.read_excel(uploaded_country_code,keep_default_na=False, na_values=[])
+            df_format = pd.read_excel(uploaded_df_format)
+            st.success("Loaded Country_code.xlsx and OFAC_format.xlsx from uploads.")
+        else:
+            st.warning("Please upload Country_code.xlsx and OFAC_format.xlsx OR click the button to load them locally.")
+            st.stop()
+
+    progress_bar.progress(20)
     status_text.text("Fetching JSON data from online source...")
     url = "https://data.trade.gov/downloadable_consolidated_screening_list/v1/consolidated.json"
     resp = requests.get(url)
     resp.raise_for_status()
     data = resp.json()
     df_json = pd.json_normalize(data, "results")
-    progress_bar.progress(20)
+    progress_bar.progress(30)
 
     status_text.text("Combining and filtering data...")
     df_checkv2["id-name"] = df_checkv2["id"].astype("string").fillna('') + "-" + df_checkv2["name"].fillna('').astype(str)
     df_json["ID-NAME"] = df_json["id"] + "-" + df_json["name"]
     filtered_df = df_json[df_json['ID-NAME'].isin(df_checkv2['id-name'])]
-    progress_bar.progress(30)
+    progress_bar.progress(40)
 
     status_text.text("Mapping additional columns...")
     name_to_source = dict(zip(df_checkv2['id-name'], df_checkv2['source']))
@@ -45,7 +73,7 @@ if uploaded_df_checkv2 and uploaded_country_code and uploaded_df_format:
     filtered_df['source'] = filtered_df['ID-NAME'].map(name_to_source)
     filtered_df['alias2'] = filtered_df['ID-NAME'].map(idname_to_alias)
     filtered_df2 = filtered_df.drop_duplicates(subset=['ID-NAME'], keep='last')
-    progress_bar.progress(40)
+    progress_bar.progress(50)
 
     filtered_df2['alias2'] = filtered_df2['alias2'].fillna('').apply(lambda x: [item.strip() for item in x.split(';') if item.strip()])
     filtered_df2['alt_names'] = filtered_df2.apply(lambda row: list(set(row['alt_names']) | set(row['alias2'])), axis=1)
@@ -56,8 +84,7 @@ if uploaded_df_checkv2 and uploaded_country_code and uploaded_df_format:
                             'citizenships','dates_of_birth','country','nationalities','ids']]
     temp_df['remarks'] = temp_df['remarks'].fillna('').str.split(';')
     temp_df = temp_df.reset_index(drop=True)
-
-    progress_bar.progress(50)
+    progress_bar.progress(60)
     status_text.text("Extracting sanction dates and order IDs...")
 
     temp_df['sanction_date'] = temp_df['source'].str.rsplit('/', n=1).str[-1].str[:8]
@@ -85,9 +112,8 @@ if uploaded_df_checkv2 and uploaded_country_code and uploaded_df_format:
         return val
 
     temp_df['ids'] = temp_df['ids'].apply(parse_ids_column)
-    progress_bar.progress(60)
-    status_text.text("Processing IDs and extracting required fields...")
 
+    status_text.text("Processing IDs and extracting required fields...")
     wanted_types = [
         'Phone Number',
         'Target Type',
@@ -332,7 +358,6 @@ if uploaded_df_checkv2 and uploaded_country_code and uploaded_df_format:
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df_org_final.to_excel(writer, sheet_name='organization', index=False)
         df_ind_final.to_excel(writer, sheet_name='individual', index=False)
-        # writer.save()  # Not needed with 'with' context
     processed_data = output.getvalue()
 
     st.download_button(
@@ -346,6 +371,6 @@ if uploaded_df_checkv2 and uploaded_country_code and uploaded_df_format:
     status_text.text("Processing complete!")
 
 else:
-    st.info("Please upload all three input Excel files from the sidebar to proceed.")
+    st.info("Please upload df_checkv2.xlsx to proceed.")
 
-st.info("⚠️ After downloading you have to work on ind name segregation,alias type, dob, incorporation dates, position, creation date columns")
+st.info("⚠️ After downloading you have to work on ind name segregation, alias type, dob, incorporation dates, position, creation date columns")

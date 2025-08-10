@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+import time
 
 # Set the page title for browser tab (page bar)
 st.set_page_config(page_title="Match name with csv")
@@ -66,6 +67,14 @@ if uploaded_df_check:
         file_name="df_checkv2.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+    # --- Progress for OFAC consolidated file ---
+    st.write("### Preparing OFAC_consolidated.xlsx for download...")
+    progress_bar = st.progress(0)
+
+    for percent in range(0, 101, 20):
+        time.sleep(0.1)  # simulate preparation time
+        progress_bar.progress(percent)
 
     # Convert df_csv to Excel in-memory for download
     output_csv = BytesIO()
