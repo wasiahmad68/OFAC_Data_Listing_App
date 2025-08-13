@@ -76,7 +76,26 @@ if uploaded_df_checkv2:
     progress_bar.progress(50)
 
     filtered_df2['alias2'] = filtered_df2['alias2'].fillna('').apply(lambda x: [item.strip() for item in x.split(';') if item.strip()])
-    filtered_df2['alt_names'] = filtered_df2.apply(lambda row: list(set(row['alt_names']) | set(row['alias2'])), axis=1)
+    def merge_alt_into_alias(row):
+        alt_names = row['alt_names']  # plain names
+        alias2 = row['alias2']        # may contain a.k.a. / f.k.a.
+
+        # Create a set of stripped alias2 names for duplicate checking
+        stripped_alias = set()
+        for a in alias2:
+            stripped = re.sub(r'^(a\.k\.a\.|f\.k\.a\.)\s*', '', a, flags=re.I).strip()
+            stripped_alias.add(stripped)
+
+        # Add alt_names only if not in stripped_alias
+        for name in alt_names:
+            if name not in stripped_alias:
+                alias2.append(name)  # add the plain name
+
+        return alias2
+
+    filtered_df2['alt_names'] = filtered_df2.apply(merge_alt_into_alias, axis=1)
+    # filtered_df2.drop(columns=['alias2'], inplace=True)
+    
     filtered_df2.drop(columns=['alias2'], inplace=True)
     temp_df = filtered_df2[['ID-NAME','entity_number', 'type','name','alt_names',
                             'places_of_birth','addresses','source', 'programs',                
